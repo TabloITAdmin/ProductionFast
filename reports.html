@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+  <head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width,initial-scale=1" />
+	<title>Reports & History</title>
+	<link rel="stylesheet" href="variables.css">
+	<link rel="stylesheet" href="style.css">
+	<style>
+	  body { padding: var(--space-5); }
+	  main { max-width: var(--content-width); margin: 0 auto; display: grid; gap: var(--space-4); }
+	  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
+	  @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
+	  #printHeader { display: none; }
+	  @media print {
+		#printHeader { display: block; margin-bottom: 12px; }
+		#printHeader h1 { font-size: 18px; margin: 0; }
+	  }
+	</style>
+  </head>
+  <body>
+	<main>
+	  <section class="card no-print">
+		<div class="content toolbar">
+		  <label>Month <input type="month" id="monthInput"/></label>
+		  <button id="btnLoad" class="primary">Load</button>
+		  <button id="btnPrint">Print / Save as PDF</button>
+		  <span id="status" class="muted"></span>
+		</div>
+	  </section>
+
+	  <div id="printHeader">
+		<h1 id="printTitle"></h1>
+	  </div>
+
+	  <div class="grid-2">
+		<section class="card">
+		  <h2>Raw Materials Consumed</h2>
+		  <div class="content">
+			<table>
+			  <thead><tr><th>Raw Material</th><th class="right">Total Used</th></tr></thead>
+			  <tbody id="rawTbody"></tbody>
+			</table>
+		  </div>
+		</section>
+		<section class="card">
+		  <h2>Products Produced</h2>
+		  <div class="content">
+			<table>
+			  <thead><tr><th>Product</th><th class="right">Total Qty</th><th class="right">Times Made</th></tr></thead>
+			  <tbody id="prodTbody"></tbody>
+			</table>
+		  </div>
+		</section>
+	  </div>
+
+	  <section class="card">
+		<h2>Daily Breakdown</h2>
+		<div class="content">
+		  <table>
+			<thead><tr><th>Date</th><th class="right">Items Completed</th><th class="no-print">Open</th></tr></thead>
+			<tbody id="dailyTbody"></tbody>
+		  </table>
+		</div>
+	  </section>
+	</main>
+
+<script type="module">
+	const firebaseConfig = {
+	  apiKey: "AIzaSyA2jSob5blKCnBoFWn6Skx3kSg4rUKAGqQ",
+	  authDomain: "production-3e150.firebaseapp.com",
+	  databaseURL: "https://production-3e150-default-rtdb.asia-southeast1.firebasedatabase.app",
+	  projectId: "production-3e150",
+	  storageBucket: "production-3e150.firebasestorage.app",
+	  messagingSenderId: "287631316111",
+	  appId: "1:287631316111:web:2ebd4957b4e022ae534cfa"
+	};
+
+	import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+	import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
+	import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+
+	const app = initializeApp(firebaseConfig);
+	const db = getDatabase(app);
+	const auth = getAuth(app);
+
+	const monthInput = document.getElementById('monthInput');
+	const btnLoad = document.getElementById('btnLoad');
+	const btnPrint = document.getElementById('btnPrint');
+	const statusEl = document.getElementById('status');
+	const rawTbody = document.getElementById('rawTbody');
+	const prodTbody = document.getElementById('prodTbody');
+	const dailyTbody = document.getElementById('dailyTbody');
+	const printTitle = document.getElementById('printTitle');
+
+	function esc(s) {
+	  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+	}
+	function currentMonth() {
+	  const d = new Date();
+	  const tz = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+	  return tz.toISOString().slice(0,7);
+	}
+	function fmt(n) {
+	  return Number(n||0).toLocaleString(undefined, { maximumFractionDigits: 2 });
+	}
+
+	async function loadMonth() {
+	  const monthKey = monthInput.value || currentMonth();
+	  statusEl.textContent = `Loading ${monthKey}...`;
+
+	  const snap = await get(ref(db, `consumption/${monthKey}`));
+	  const data = snap.val() || {};
+	  const entries = Object.values(data);
+
+	  const rawMap = new Map();
+	  const prodMap = new Map();
+	  const dayMap = new Map();
+
+	  entries.forEach(e => {
+		const day = e.date || monthKey;
+		dayMap.set(day, (dayMap.get(day) || 0) + 1);
+
+		const pKey = `${e.productName}|${e.uom || ''}`;
+		const p = prodMap.get(pKey) || { name: e.productName, uom: e.uom || '', qty: 0, count: 0 };
+		p.qty += Number(e.producedQty) || 0;
+		p.count += 1;
+		prodMap.set(pKey, p);
+
+		(e.rawMaterials || []).forEach(rm => {
+		  const rKey = `${rm.name}|${rm.unit || ''}`;
+		  const r = rawMap.get(rKey) || { name: rm.name, unit: rm.unit || '', qty: 0 };
+		  r.qty += Number(rm.qty) || 0;
+		  rawMap.set(rKey, r);
+		});
+	  });
+
+	  const rawList = [...rawMap.values()].sort((a, b) => b.qty - a.qty);
+	  const prodList = [...prodMap.values()].sort((a, b) => b.qty - a.qty);
+	  const dayList = [...dayMap.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+
+	  rawTbody.innerHTML = rawList.map(r =>
+		`<tr><td>${esc(r.name)}</td><td class="right">${fmt(r.qty)} ${esc(r.unit)}</td></tr>`
+	  ).join('') || `<tr><td colspan="2" class="muted">No data for ${monthKey} yet.</td></tr>`;
+
+	  prodTbody.innerHTML = prodList.map(p =>
+		`<tr><td>${esc(p.name)}</td><td class="right">${fmt(p.qty)} ${esc(p.uom)}</td><td class="right">${p.count}</td></tr>`
+	  ).join('') || `<tr><td colspan="3" class="muted">No data for ${monthKey} yet.</td></tr>`;
+
+	  dailyTbody.innerHTML = dayList.map(([day, count]) =>
+		`<tr><td>${day}</td><td class="right">${count}</td><td class="no-print"><a href="production-planner.html?date=${day}">Open</a></td></tr>`
+	  ).join('') || `<tr><td colspan="3" class="muted">No completed items in ${monthKey} yet.</td></tr>`;
+
+	  printTitle.textContent = `Monthly Consumption & Production Report — ${monthKey}`;
+	  statusEl.textContent = `Loaded ${monthKey}. ${entries.length} completed item(s) logged.`;
+	}
+
+	btnLoad.addEventListener('click', loadMonth);
+	btnPrint.addEventListener('click', () => window.print());
+
+	onAuthStateChanged(auth, (user) => {
+	  if (user) {
+		monthInput.value = currentMonth();
+		loadMonth();
+	  } else {
+		signInAnonymously(auth).catch(err => alert(err.message));
+	  }
+	});
+</script>
+  </body>
+</html>

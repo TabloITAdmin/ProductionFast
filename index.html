@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Commissary Production Dashboard</title>
+  <link rel="stylesheet" href="variables.css">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    body { display: flex; height: 100vh; overflow: hidden; }
+    .main { flex: 1; background: var(--color-bg); display: flex; flex-direction: column; }
+    iframe { flex: 1; border: none; width: 100%; }
+    @media (max-width: 700px) {
+      body { flex-direction: column; height: auto; min-height: 100vh; }
+      .sidebar { width: 100%; flex-direction: row; overflow-x: auto; padding: var(--space-3); }
+      .sidebar h2 { display: none; }
+      .menu { display: flex; gap: 8px; }
+      .menu a { margin: 0; white-space: nowrap; }
+      iframe { height: 80vh; }
+    }
+  </style>
+</head>
+<body>
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <h2>🏭 Commissary</h2>
+    <div class="menu" id="menu">
+      <a href="#" data-page="production-planner.html" data-label="🛠 Production Planner">🛠 Production Planner</a>
+      <a href="#" data-page="reports.html" data-label="📊 Reports & History">📊 Reports & History</a>
+    </div>
+  </div>
+
+  <!-- Main Content -->
+  <div class="main">
+    <div class="main-header" id="pageTitle">🛠 Production Planner</div>
+    <iframe id="mainFrame" src="production-planner.html"></iframe>
+  </div>
+
+  <script>
+    const links = document.querySelectorAll('#menu a');
+    const frame = document.getElementById('mainFrame');
+    const title = document.getElementById('pageTitle');
+
+    function loadPage(el) {
+      frame.src = el.dataset.page;
+      title.innerText = el.dataset.label;
+      links.forEach(a => a.classList.remove('active'));
+      el.classList.add('active');
+    }
+
+    links.forEach(a => {
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        loadPage(a);
+      });
+    });
+
+    links[0].classList.add('active');
+  </script>
+</body>
+</html>
