@@ -1,0 +1,653 @@
+<!doctype html>
+<html lang="en">
+  <head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width,initial-scale=1" />
+	<title>Production Planner</title>
+	<link rel="stylesheet" href="variables.css">
+	<link rel="stylesheet" href="style.css">
+	<style>
+	  main { padding: var(--space-5); display: grid; gap: var(--space-3); grid-template-columns: 360px 1fr; }
+	  @media (max-width: 980px) { main { grid-template-columns: 1fr; padding: var(--space-3); } }
+
+	  header {
+		padding: var(--space-4) var(--space-5);
+		display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+		border-bottom: 1px solid var(--color-border);
+		position: sticky; top: 0; background: var(--color-surface); z-index: 5;
+	  }
+	  header h1 { font-size: 18px; margin: 0; color: var(--color-text); }
+
+	  .bom-row {
+		display: grid;
+		grid-template-columns: 2fr 1fr 1fr auto;
+		gap: 8px;
+		align-items: end;
+		margin-bottom: 8px;
+	  }
+	  @media (max-width: 540px) { .bom-row { grid-template-columns: 1fr; } }
+
+	  .pill.status-todo { background: var(--color-surface-muted); color: var(--color-text-muted); }
+	  .pill.status-in_progress { background: var(--color-accent-soft); color: var(--color-accent); }
+	  .pill.status-done { background: #dcfce7; color: var(--color-success); }
+
+	  .print-date { display: none; }
+	  @media print {
+		.print-date { display: block; margin-bottom: 12px; font-weight: bold; }
+	  }
+	</style>
+  </head>
+  <body>
+	<header>
+	  <h1>🛠 Production Planner</h1>
+	  <div class="toolbar">
+		<label class="muted">Date
+		  <input type="date" id="dateInput"/>
+		</label>
+		<button id="printBtn" class="primary no-print">Print</button>
+		<span id="status" class="muted"></span>
+	  </div>
+	</header>
+
+	<main>
+	  <!-- Left: Inputs -->
+	  <section class="card no-print">
+		<h2>1) Add / Select Product</h2>
+		<div class="content">
+		  <label>Priority
+			<select id="prioritySelect">
+			  <option value="high">High Priority</option>
+			  <option value="mid">Mid Priority</option>
+			  <option value="next">Can be done Next Day</option>
+			</select>
+		  </label>
+
+		  <div class="card">
+			<h2>From Product Library</h2>
+			<div class="content">
+			  <label>Select Product
+				<select id="librarySelect">
+				  <option value="">— choose —</option>
+				</select>
+			  </label>
+			  <div class="grid-3">
+				<button id="btnAddSelectedToToday" class="primary">Add Selected to Today</button>
+				<button id="btnEditSelected">Load to Form (edit)</button>
+				<button id="btnDeleteSelected" class="warning">Delete from Library</button>
+			  </div>
+			  <small class="muted">Check here first — most products are probably already saved. Tip: Load to Form → tweak values / recipe → "Add to Today".</small>
+			</div>
+		  </div>
+
+		  <button type="button" id="btnToggleNewProduct" class="no-print" style="width:100%;">+ Add a New Product (not in library)</button>
+
+		  <div class="card" id="newProductCard" style="display:none;">
+			<h2 id="newProductCardTitle">New Product (adds to Library)</h2>
+			<div class="content">
+			  <small class="muted" id="newProductHint">Only use this for a product that isn't in the library yet.</small>
+			  <div id="formModeBanner" class="toolbar" style="display:none; background:var(--color-surface-muted); padding:10px; border-radius:var(--radius-xs);">
+				<span id="formModeText" style="font-size:13px;"></span>
+				<button type="button" id="btnCancelEditMode" style="margin-left:auto;">Cancel / Start Fresh</button>
+			  </div>
+			  <label>Product Name
+				<input id="p_name" placeholder="e.g. Garlic Shrimp"/>
+				<small id="nameWarning" class="muted" style="color:var(--color-danger); display:none;"></small>
+			  </label>
+			  <div class="row">
+				<label>Start Wt (kg)
+				  <input id="p_startWeight" type="number" min="0" step="0.01" placeholder="e.g. 10"/>
+				</label>
+				<label>Unit of Measurement
+				  <input id="p_uom" placeholder="e.g. pack, kg, tray"/>
+				</label>
+			  </div>
+
+			  <label>Estimated Qty
+				<input id="p_qty" type="number" min="0" step="1" placeholder="e.g. 50"/>
+			  </label>
+			  <div class="row">
+				<label>Person in Charge (Cook)
+				  <input id="p_picCook" placeholder="e.g. Ana"/>
+				</label>
+				<label>Equipment
+				  <input id="p_equipment" placeholder="e.g. Steamer, Fryer"/>
+				</label>
+			  </div>
+
+			  <label>Cooking Time (mins)
+				<input id="p_cookTime" type="number" min="0" step="1" placeholder="e.g. 45"/>
+			  </label>
+			  <div class="row">
+				<label>Person in Charge (Repack) <input id="p_picRepack" placeholder="e.g. Ben"/></label>
+				<label>Repack Time (mins) <input id="p_repackTime" type="number" min="0" step="1" placeholder="e.g. 20"/></label>
+			  </div>
+
+			  <div class="card">
+				<h2>Recipe / BOM (Raw Materials)</h2>
+				<div class="content">
+				  <div id="bomRowsContainer"></div>
+				  <button type="button" id="btnAddBomRow">+ Add Raw Material</button>
+				  <small class="muted">At least 1 raw material is required before this product can be added to Today's list. One-ingredient recipes (e.g. just "Pork" for slicing) are fine.</small>
+				</div>
+			  </div>
+
+			  <div class="toolbar">
+				<button id="btnAddToLibrary" class="primary">Add to Product Library</button>
+				<button id="btnAddToTodayFromNew">Add to Today (and save)</button>
+			  </div>
+			</div>
+		  </div>
+		</div>
+	  </section>
+
+	  <!-- Right: Table -->
+	  <section class="card">
+		<h2>2) Today's Production</h2>
+		<div class="content">
+		  <div id="printDateLabel" class="print-date"></div>
+		  <div class="toolbar no-print">
+			<button id="btnClearToday" class="warning">Clear Today</button>
+			<span class="muted">High & Mid are shown first. Mark items "Done" to log raw material usage for reports.</span>
+		  </div>
+
+		  <div class="table-wrap">
+			<table id="prodTable">
+			  <thead>
+				<tr>
+				  <th>#</th>
+				  <th>Product</th>
+				  <th>Start Wt (kg)</th>
+				  <th>UoM</th>
+				  <th>PIC (Cook)</th>
+				  <th>Equipment</th>
+				  <th>Cooking Time</th>
+				  <th>PIC (Repack)</th>
+				  <th>Repack Time</th>
+				  <th class="right">Est. Qty</th>
+				  <th>Priority</th>
+				  <th>Status</th>
+				  <th class="no-print">Actions</th>
+				</tr>
+			  </thead>
+			  <tbody id="prodTbody">
+				<!-- rows -->
+			  </tbody>
+			</table>
+		  </div>
+		</div>
+	  </section>
+	</main>
+
+<script type="module">
+	const firebaseConfig = {
+	  apiKey: "AIzaSyA2jSob5blKCnBoFWn6Skx3kSg4rUKAGqQ",
+	  authDomain: "production-3e150.firebaseapp.com",
+	  databaseURL: "https://production-3e150-default-rtdb.asia-southeast1.firebasedatabase.app",
+	  projectId: "production-3e150",
+	  storageBucket: "production-3e150.firebasestorage.app",
+	  messagingSenderId: "287631316111",
+	  appId: "1:287631316111:web:2ebd4957b4e022ae534cfa"
+	};
+
+	import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+	import { getDatabase, ref, push, set, onValue, get, update, remove, child } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
+	import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+
+	const app = initializeApp(firebaseConfig);
+	const db = getDatabase(app);
+	const auth = getAuth(app);
+
+	const dateInput = document.getElementById('dateInput');
+	const printBtn = document.getElementById('printBtn');
+	const statusEl = document.getElementById('status');
+	const prioritySelect = document.getElementById('prioritySelect');
+	const p_name = document.getElementById('p_name');
+	const btnToggleNewProduct = document.getElementById('btnToggleNewProduct');
+	const newProductCard = document.getElementById('newProductCard');
+	const nameWarning = document.getElementById('nameWarning');
+	const p_uom = document.getElementById('p_uom');
+	const p_qty = document.getElementById('p_qty');
+	const p_picCook = document.getElementById('p_picCook');
+	const p_cookTime = document.getElementById('p_cookTime');
+	const p_picRepack = document.getElementById('p_picRepack');
+	const p_repackTime = document.getElementById('p_repackTime');
+	const p_startWeight = document.getElementById('p_startWeight');
+	const p_equipment = document.getElementById('p_equipment');
+	const btnAddToLibrary = document.getElementById('btnAddToLibrary');
+	const btnAddToTodayFromNew = document.getElementById('btnAddToTodayFromNew');
+	const newProductCardTitle = document.getElementById('newProductCardTitle');
+	const newProductHint = document.getElementById('newProductHint');
+	const formModeBanner = document.getElementById('formModeBanner');
+	const formModeText = document.getElementById('formModeText');
+	const btnCancelEditMode = document.getElementById('btnCancelEditMode');
+	const librarySelect = document.getElementById('librarySelect');
+	const btnAddSelectedToToday = document.getElementById('btnAddSelectedToToday');
+	const btnEditSelected = document.getElementById('btnEditSelected');
+	const btnDeleteSelected = document.getElementById('btnDeleteSelected');
+	const btnClearToday = document.getElementById('btnClearToday');
+	const prodTbody = document.getElementById('prodTbody');
+	const bomRowsContainer = document.getElementById('bomRowsContainer');
+	const btnAddBomRow = document.getElementById('btnAddBomRow');
+
+	function esc(s) {
+	  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+	}
+
+	const todayISO = () => {
+	  const d = new Date();
+	  const tz = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+	  return tz.toISOString().slice(0,10);
+	};
+	const getDateKey = () => (dateInput.value || todayISO());
+	const getMonthKey = () => getDateKey().slice(0,7);
+	const PRIORITY_ORDER = { high: 0, mid: 1, next: 2 };
+	const priorityPill = (p) => {
+	  const map = { high: 'High', mid: 'Mid', next: 'Next Day' };
+	  const cls = p === 'high' ? 'pill high' : p === 'mid' ? 'pill mid' : 'pill next';
+	  return `<span class="${cls}">${map[p]||p}</span>`;
+	};
+	const statusLabel = (s) => s === 'done' ? 'Done' : s === 'in_progress' ? 'In Progress' : 'To Do';
+
+	// ---------- BOM editor ----------
+	let currentBom = [];
+	function renderBomRows() {
+	  bomRowsContainer.innerHTML = currentBom.map((r, i) => `
+		<div class="bom-row" data-idx="${i}">
+		  <input class="bom-name" data-idx="${i}" placeholder="e.g. Cooking Oil" value="${esc(r.name||'')}"/>
+		  <input class="bom-qty" data-idx="${i}" type="number" min="0" step="0.01" placeholder="Qty" value="${r.qty ?? ''}"/>
+		  <input class="bom-unit" data-idx="${i}" placeholder="Unit (L, kg, pcs)" value="${esc(r.unit||'')}"/>
+		  <button type="button" class="warning bom-remove" data-idx="${i}">✕</button>
+		</div>
+	  `).join('') || `<div class="muted" style="font-size:12px;">No raw materials yet. Click "+ Add Raw Material".</div>`;
+	}
+	btnAddBomRow.addEventListener('click', () => {
+	  currentBom.push({ name: '', qty: '', unit: '' });
+	  renderBomRows();
+	});
+	bomRowsContainer.addEventListener('input', (e) => {
+	  const idx = e.target.dataset.idx;
+	  if (idx === undefined) return;
+	  const i = Number(idx);
+	  if (e.target.classList.contains('bom-name')) currentBom[i].name = e.target.value;
+	  if (e.target.classList.contains('bom-qty')) currentBom[i].qty = e.target.value;
+	  if (e.target.classList.contains('bom-unit')) currentBom[i].unit = e.target.value;
+	});
+	bomRowsContainer.addEventListener('click', (e) => {
+	  const btn = e.target.closest('.bom-remove');
+	  if (!btn) return;
+	  currentBom.splice(Number(btn.dataset.idx), 1);
+	  renderBomRows();
+	});
+	renderBomRows();
+
+	// ---------- Form mode: 'new' | 'editLibrary' | 'editTodayEntry' ----------
+	let formMode = 'new';
+	let editingProductId = null;
+	let editingTodayEntryId = null;
+
+	function updateFormModeUI() {
+	  if (formMode === 'editLibrary') {
+		newProductCardTitle.textContent = 'Edit Library Product';
+		newProductHint.textContent = 'Editing this product\'s master details in the Product Library.';
+		formModeBanner.style.display = 'flex';
+		formModeText.textContent = `✏️ Editing library product "${p_name.value}". Saving here updates it for future use — it will NOT change items already on Today's list.`;
+		btnAddToLibrary.textContent = 'Update Product in Library';
+		btnAddToTodayFromNew.textContent = 'Save Changes + Add to Today';
+	  } else if (formMode === 'editTodayEntry') {
+		newProductCardTitle.textContent = 'Edit Today\'s Entry';
+		newProductHint.textContent = 'These changes apply only to this one entry for today.';
+		formModeBanner.style.display = 'flex';
+		formModeText.textContent = `✏️ Editing "${p_name.value}" on today's list. The original entry stays as-is on the list unless you click "Add to Today" below — Cancel leaves it untouched.`;
+		btnAddToLibrary.textContent = 'Add to Product Library';
+		btnAddToTodayFromNew.textContent = 'Save Changes to This Entry';
+	  } else {
+		newProductCardTitle.textContent = 'New Product (adds to Library)';
+		newProductHint.textContent = 'Only use this for a product that isn\'t in the library yet.';
+		formModeBanner.style.display = 'none';
+		btnAddToLibrary.textContent = 'Add to Product Library';
+		btnAddToTodayFromNew.textContent = 'Add to Today (and save)';
+	  }
+	}
+	btnCancelEditMode.addEventListener('click', () => clearForm());
+
+	function clearForm() {
+	  p_name.value = '';
+	  p_uom.value = '';
+	  p_qty.value = '';
+	  p_picCook.value = '';
+	  p_cookTime.value = '';
+	  p_picRepack.value = '';
+	  p_repackTime.value = '';
+	  p_startWeight.value = '';
+	  p_equipment.value = '';
+	  currentBom = [];
+	  renderBomRows();
+	  nameWarning.style.display = 'none';
+	  formMode = 'new';
+	  editingProductId = null;
+	  editingTodayEntryId = null;
+	  updateFormModeUI();
+	  setNewProductVisible(false);
+	}
+
+	function productFromForm() {
+	  const name = p_name.value.trim();
+	  if (!name) throw new Error('Product name is required.');
+	  const bom = currentBom
+		.filter(r => r.name && r.name.trim() && Number(r.qty) > 0)
+		.map(r => ({ name: r.name.trim(), qty: Number(r.qty), unit: (r.unit||'').trim() }));
+	  return {
+		name,
+		startWeight: Number(p_startWeight.value || 0),
+		uom: p_uom.value.trim() || '',
+		estQty: Number(p_qty.value || 0),
+		picCook: p_picCook.value.trim() || '',
+		equipment: p_equipment.value.trim() || '',
+		cookTime: Number(p_cookTime.value || 0),
+		picRepack: p_picRepack.value.trim() || '',
+		repackTime: Number(p_repackTime.value || 0),
+		bom
+	  };
+	}
+
+	function requireBom(p) {
+	  if (!p.bom || p.bom.length === 0) {
+		alert(`"${p.name}" has no recipe (BOM) yet. Add at least one raw material — even a single ingredient is fine — before adding it to Today's list.`);
+		return false;
+	  }
+	  return true;
+	}
+
+	function rowTemplate(idx, id, item) {
+	  const bomCount = (item.bom || []).length;
+	  const status = item.status || 'todo';
+	  return `
+		<tr data-id="${id}">
+		  <td>${idx}</td>
+		  <td>${esc(item.name)}<div class="muted" style="font-size:11px;">${bomCount} raw material${bomCount===1?'':'s'}</div></td>
+		  <td>${item.startWeight ?? 0}</td>
+		  <td>${esc(item.uom)}</td>
+		  <td>${esc(item.picCook)}</td>
+		  <td>${esc(item.equipment || '')}</td>
+		  <td>${item.cookTime} mins</td>
+		  <td>${esc(item.picRepack)}</td>
+		  <td>${item.repackTime} mins</td>
+		  <td class="right">${item.estQty}</td>
+		  <td>${priorityPill(item.priority)}</td>
+		  <td>
+			<select class="statusSelect" data-id="${id}">
+			  <option value="todo" ${status==='todo'?'selected':''}>To Do</option>
+			  <option value="in_progress" ${status==='in_progress'?'selected':''}>In Progress</option>
+			  <option value="done" ${status==='done'?'selected':''}>Done</option>
+			</select>
+		  </td>
+		  <td class="no-print">
+			<button data-act="edit">Edit</button>
+			<button data-act="remove" class="warning">Remove</button>
+		  </td>
+		</tr>
+	  `;
+	}
+	function renderToday(snapshot) {
+	  const data = snapshot.val() || {};
+	  const list = Object.entries(data).map(([id, v]) => ({ id, ...v }));
+	  list.sort((a, b) => {
+		const pri = PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority];
+		if (pri !== 0) return pri;
+		return (a.name||'').localeCompare(b.name||'');
+	  });
+	  prodTbody.innerHTML = list.map((row, i) => rowTemplate(i+1, row.id, row)).join('') || `<tr><td colspan="13" class="muted">No items yet for ${getDateKey()}.</td></tr>`;
+	}
+	let libraryData = {};
+	function findDuplicateByName(name, excludeId) {
+	  const target = (name || '').trim().toLowerCase();
+	  if (!target) return null;
+	  const match = Object.entries(libraryData).find(([id, v]) =>
+		id !== excludeId && (v.name || '').trim().toLowerCase() === target
+	  );
+	  return match ? { id: match[0], ...match[1] } : null;
+	}
+	function renderLibrary(snapshot) {
+	  const data = snapshot.val() || {};
+	  libraryData = data;
+	  const opts = ['<option value="">— choose —</option>'].concat(
+		Object.entries(data)
+		  .sort((a,b)=> (a[1].name||'').localeCompare(b[1].name||''))
+		  .map(([id, v]) => {
+			const ready = v.bom && v.bom.length > 0;
+			return `<option value="${id}">${esc(v.name)} — ${esc(v.uom || 'unit')}${ready ? '' : ' ⚠ no recipe'}</option>`;
+		  })
+	  );
+	  librarySelect.innerHTML = opts.join('');
+	}
+	const libRef = ref(db, 'products');
+	const todayRef = () => ref(db, `production/${getDateKey()}`);
+
+	async function logConsumption(item) {
+	  const consRef = ref(db, `consumption/${getMonthKey()}`);
+	  await set(push(consRef), {
+		date: getDateKey(),
+		productName: item.name,
+		producedQty: item.estQty || 0,
+		uom: item.uom || '',
+		rawMaterials: item.bom || []
+	  });
+	}
+
+	onValue(libRef, renderLibrary);
+	let todayUnsub = null;
+	function subToday() {
+	  if (todayUnsub) todayUnsub();
+	  const r = todayRef();
+	  const cb = onValue(r, (snap) => renderToday(snap));
+	  todayUnsub = () => cb();
+	}
+	function setNewProductVisible(visible) {
+	  newProductCard.style.display = visible ? '' : 'none';
+	  btnToggleNewProduct.textContent = visible ? '− Hide New Product Form' : '+ Add a New Product (not in library)';
+	}
+	btnToggleNewProduct.addEventListener('click', () => {
+	  const willShow = newProductCard.style.display === 'none';
+	  if (willShow) {
+		setNewProductVisible(true);
+		p_name.focus();
+	  } else {
+		clearForm(); // collapsing also resets any in-progress edit state
+	  }
+	});
+	p_name.addEventListener('input', () => {
+	  if (formMode !== 'new') { nameWarning.style.display = 'none'; return; }
+	  const dup = findDuplicateByName(p_name.value, editingProductId);
+	  if (dup) {
+		nameWarning.textContent = `⚠ "${dup.name}" already exists in the library — select it from "From Product Library" above instead of adding a duplicate.`;
+		nameWarning.style.display = 'block';
+	  } else {
+		nameWarning.style.display = 'none';
+	  }
+	});
+	btnAddToLibrary.addEventListener('click', async () => {
+	  try {
+		const p = productFromForm();
+
+		if (formMode === 'editLibrary' && editingProductId) {
+		  await set(child(libRef, editingProductId), p);
+		  statusEl.textContent = `Updated library product: ${p.name}. Existing Today entries are unchanged.`;
+		  clearForm();
+		  return;
+		}
+
+		const dup = findDuplicateByName(p.name, editingProductId);
+		if (dup) {
+		  alert(`"${p.name}" already exists in the library (as "${dup.name}"). Please select it from "From Product Library" instead of adding a duplicate. Use "Load to Form (edit)" if you need to change its details.`);
+		  return;
+		}
+		const newRef = push(libRef);
+		await set(newRef, p);
+		statusEl.textContent = `Saved to library: ${p.name}`;
+		clearForm();
+	  } catch (e) { alert(e.message); }
+	});
+	btnAddToTodayFromNew.addEventListener('click', async () => {
+	  try {
+		const p = productFromForm();
+		if (!requireBom(p)) return;
+
+		if (formMode === 'editLibrary' && editingProductId) {
+		  // Update the master library record, then add a NEW entry to today
+		  // with the edited values. Entries already added today are untouched.
+		  await set(child(libRef, editingProductId), p);
+		  const item = { ...p, priority: prioritySelect.value, status: 'todo' };
+		  await set(push(todayRef()), item);
+		  statusEl.textContent = `Updated "${p.name}" in the library and added it to ${getDateKey()} with the new values. Entries already on today's list are unaffected.`;
+		  clearForm();
+		  return;
+		}
+
+		if (formMode === 'editTodayEntry') {
+		  // Only now — on confirmed save — do we replace the original entry.
+		  // If the user never gets here (cancel/navigate away), nothing is lost.
+		  const item = { ...p, priority: prioritySelect.value, status: 'todo' };
+		  await set(push(todayRef()), item);
+		  if (editingTodayEntryId) {
+			await remove(child(todayRef(), editingTodayEntryId));
+		  }
+		  statusEl.textContent = `Saved changes to ${p.name} on ${getDateKey()}'s list.`;
+		  clearForm();
+		  return;
+		}
+
+		const dup = findDuplicateByName(p.name);
+		if (dup) {
+		  const proceed = confirm(`"${p.name}" already exists in the library (as "${dup.name}"). Add today's entry using the EXISTING product instead? (Recommended — avoids duplicates)\n\nOK = use existing product\nCancel = stop and pick it manually from the library list above`);
+		  if (proceed) {
+			const existingItem = { ...dup, priority: prioritySelect.value, status: 'todo' };
+			delete existingItem.id;
+			await set(push(todayRef()), existingItem);
+			statusEl.textContent = `Added to ${getDateKey()}: ${dup.name} (existing product)`;
+			clearForm();
+		  }
+		  return;
+		}
+		const item = { ...p, priority: prioritySelect.value, status: 'todo' };
+		await set(push(todayRef()), item);
+		await set(push(libRef), p);
+		statusEl.textContent = `Added to ${getDateKey()}: ${p.name}`;
+		clearForm();
+	  } catch (e) { alert(e.message); }
+	});
+	btnAddSelectedToToday.addEventListener('click', async () => {
+	  const id = librarySelect.value;
+	  if (!id) return alert('Choose a product from the library.');
+	  const snap = await get(child(libRef, id));
+	  if (!snap.exists()) return alert('Product not found.');
+	  const p = snap.val();
+	  if (!requireBom(p)) return;
+	  const item = { ...p, priority: prioritySelect.value, status: 'todo' };
+	  await set(push(todayRef()), item);
+	  statusEl.textContent = `Added to ${getDateKey()}: ${p.name}`;
+	});
+	btnEditSelected.addEventListener('click', async () => {
+	  const id = librarySelect.value;
+	  if (!id) return alert('Choose a product from the library.');
+	  const snap = await get(child(libRef, id));
+	  if (!snap.exists()) return alert('Product not found.');
+	  const p = snap.val();
+	  p_name.value = p.name || '';
+	  p_uom.value = p.uom || '';
+	  p_qty.value = p.estQty ?? '';
+	  p_picCook.value = p.picCook || '';
+	  p_cookTime.value = p.cookTime ?? '';
+	  p_picRepack.value = p.picRepack || '';
+	  p_repackTime.value = p.repackTime ?? '';
+	  p_startWeight.value = p.startWeight ?? '';
+	  p_equipment.value = p.equipment || '';
+	  currentBom = (p.bom || []).map(r => ({ ...r }));
+	  renderBomRows();
+	  formMode = 'editLibrary';
+	  editingProductId = id;
+	  updateFormModeUI();
+	  statusEl.textContent = `Loaded "${p.name}" into form for editing.`;
+	  setNewProductVisible(true);
+	});
+	btnDeleteSelected.addEventListener('click', async () => {
+	  const id = librarySelect.value;
+	  if (!id) return alert('Choose a product from the library.');
+	  if (!confirm('Delete this product from the library? This cannot be undone. (Existing entries already on Today\'s list are not affected.)')) return;
+	  await remove(child(libRef, id));
+	  statusEl.textContent = `Deleted from library.`;
+	});
+	btnClearToday.addEventListener('click', async () => {
+	  if (!confirm(`Clear ALL items for ${getDateKey()}? This cannot be undone.`)) return;
+	  await remove(todayRef());
+	});
+	prodTbody.addEventListener('click', async (e) => {
+	  const btn = e.target.closest('button');
+	  if (!btn) return;
+	  const act = btn.dataset.act;
+	  const tr = btn.closest('tr');
+	  const id = tr.dataset.id;
+	  if (act === 'remove') {
+		if (!confirm('Remove this item from Today\'s list? This cannot be undone.')) return;
+		await remove(child(todayRef(), id));
+	  }
+	  if (act === 'edit') {
+		const snap = await get(child(todayRef(), id));
+		if (!snap.exists()) return;
+		const p = snap.val();
+		p_name.value = p.name || '';
+		p_uom.value = p.uom || '';
+		p_qty.value = p.estQty ?? '';
+		p_picCook.value = p.picCook || '';
+		p_cookTime.value = p.cookTime ?? '';
+		p_picRepack.value = p.picRepack || '';
+		p_repackTime.value = p.repackTime ?? '';
+		p_startWeight.value = p.startWeight ?? '';
+		p_equipment.value = p.equipment || '';
+		currentBom = (p.bom || []).map(r => ({ ...r }));
+		renderBomRows();
+		prioritySelect.value = p.priority || 'high';
+		formMode = 'editTodayEntry';
+		editingProductId = null;
+		editingTodayEntryId = id;
+		updateFormModeUI();
+		statusEl.textContent = `Editing ${p.name} — it stays on today's list until you click "Save Changes to This Entry". Cancel leaves it as-is.`;
+		setNewProductVisible(true);
+	  }
+	});
+	prodTbody.addEventListener('change', async (e) => {
+	  const sel = e.target.closest('.statusSelect');
+	  if (!sel) return;
+	  const id = sel.dataset.id;
+	  const newStatus = sel.value;
+	  const snap = await get(child(todayRef(), id));
+	  if (!snap.exists()) return;
+	  const item = snap.val();
+	  const updates = { status: newStatus };
+	  if (newStatus === 'done' && !item.consumedLogged) {
+		await logConsumption(item);
+		updates.consumedLogged = true;
+	  }
+	  await update(child(todayRef(), id), updates);
+	  statusEl.textContent = `${item.name}: ${statusLabel(newStatus)}`;
+	});
+	dateInput.addEventListener('change', () => {
+	  subToday();
+	  statusEl.textContent = `Date changed to ${getDateKey()}`;
+	});
+	printBtn.addEventListener('click', () => {
+	  document.getElementById("printDateLabel").textContent = "Date: " + getDateKey();
+	  window.print();
+	});
+	onAuthStateChanged(auth, (user) => {
+	  if (user) {
+		const params = new URLSearchParams(location.search);
+		const qDate = params.get('date');
+		dateInput.value = qDate || todayISO();
+		subToday();
+	  } else {
+		signInAnonymously(auth).catch((err) => alert(err.message));
+	  }
+	});
+</script>
+  </body>
+</html>
